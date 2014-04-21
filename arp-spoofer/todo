@@ -6,3 +6,24 @@
 3. Look into intercepting HTML/CSS traffic
 4. Manipulate traffic and forward it
 
+
+More:
+
+
+Lets say we want to spoof IP address "A".
+We listen to incoming packets and when some PC "B" broadcasts an ARP request for IP address A, we start spamming the fake 
+ARP replies to "B". We do this with every PC that request IP address A.
+
+
+1. Write some clean code that:
+	1.1 Finds my MAC address and interface index
+	1.2 populates the sockaddr_ll struct correctly so we have a proper ethernet header
+    1.3 Sets up the ARP header as much as possible:
+    	1.3.1 Hardware type, Protocol type, hardware addr len, prot addr len, OPCODE (reply),
+    	 		and Source MAC Address (ours) and Source IP address (The one we are spoofing, "A")
+
+
+
+2. Write code that listens to incoming packets and:
+	2.1 When an ARP request for IP "A" comes in from PC "B", plug in B's IP and MAC into the prepared msg and start spamming
+	2.2 Do this for all ARP request for IP "A"

@@ -22,8 +22,7 @@ int main() {
 	struct sockaddr_in dest;
   char *interface = malloc(40);
   struct ifreq ifr;
-    struct sockaddr_ll device;
-    // Interface to send packet through.
+  struct sockaddr_ll device;
   strcpy (interface, "wlp3s0");
 
   // Submit request for a socket descriptor to look up interface.
@@ -56,14 +55,37 @@ int main() {
  
   device.sll_protocol = 0x0608;
 
-	char msg[] = "Hello, World!";
+	
+  //Assemble dummy ARP msg
+  char *arp_header = malloc(28);
+
+  //hardware type is ethernet
+  arp_header[0] = 0x00;
+  arp_header[1] = 0x01;
+
+  //Protocl type is IP
+  arp_header[2] = 0x08;
+  arp_header[3] = 0x00;
+
+  //mac addr len
+  arp_header[4] = 0x06;
+
+  //ip addr len
+  arp_header[5] = 0x04;
+
+  //opcode 2 for reply
+  arp_header[6] = 0x00;
+  arp_header[7] = 0x02;
+ 
+
+
 
   if ((sd = socket(PF_PACKET, SOCK_DGRAM, htons(ETH_P_ALL))) < 0) {
       printf("%s\n",strerror(errno));
       return(1);
   }
 
-  if ((bytes = sendto (sd, msg, strlen(msg), 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
+  if ((bytes = sendto (sd, arp_header, 28, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
     perror ("sendto() failed");
     exit (EXIT_FAILURE);
   }
