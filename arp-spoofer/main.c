@@ -3,6 +3,7 @@
 #include <unistd.h>           // close()
 #include <string.h>           // strcpy, memset(), and memcpy()
 
+#include <pcap.h>
 #include <netdb.h>            // struct addrinfo
 #include <sys/types.h>        // needed for socket(), uint8_t, uint16_t
 #include <sys/socket.h>       // needed for socket()
@@ -15,6 +16,7 @@
 #include <linux/if_ether.h>   // ETH_P_ARP = 0x0806
 #include <linux/if_packet.h>  // struct sockaddr_ll (see man 7 packet)
 #include <net/ethernet.h>
+#include <netinet/in.h>
 
 #include <errno.h>            // errno, perror()
 
@@ -45,25 +47,31 @@ struct arp_hdr{
 };
 
 
-
-
-
 struct ifreq *populateIfreq();
 struct eth_hdr *setupEthHdr(uint8_t *dest, uint8_t *src);
 struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac, uint8_t *dest_ip);
 
-int main() {
+
+int main(int argc, char *argv[]) {
 	int sd,bytes;
   char *my_mac = malloc(6);
   char *interface = malloc(40);
   struct ifreq *ifr;
   struct sockaddr_ll device;
-  strcpy (interface, "wlp3s0");
+  strcpy (interface, argv[1]);
   char *spoofed_IP = malloc(4);
   int status;
+  struct arp_hdr *recv_arp;
+
+struct pcap_pkthdr *pkthdr;   
+const unsigned char *packet=NULL;
+  bpf_u_int32 netaddr=0, mask=0;    /* To Store network address and netmask   */ 
+ struct bpf_program filter;        /* Place to store the BPF filter program  */ 
+ char errbuf[PCAP_ERRBUF_SIZE];    /* Error buffer                           */ 
+ pcap_t *descr = NULL;             /* Network interface handler              */ 
 
   //to be changed later
-  strcpy(spoofed_IP,"192.168.1.50");
+  strcpy(spoofed_IP,argv[2]);
 
 
 
@@ -81,14 +89,59 @@ int main() {
   memcpy(my_mac,ifr->ifr_hwaddr.sa_data,6);
 
 
- 
 
+
+ /* Open network device for packet capture */ 
+ if ((descr = pcap_open_live(interface, 2048, 0,  512, errbuf))==NULL){
+    fprintf(stderr, "ERROR: %s\n", errbuf);
+    exit(1);
+ }
+    
+ /* Look up info from the capture device. */ 
+ if( pcap_lookupnet( interface , &netaddr, &mask, errbuf) == -1){
+     fprintf(stderr, "ERROR: %s\n", errbuf);
+    exit(1);
+ }
+
+ /* Compiles the filter expression into a BPF filter program */ 
+if ( pcap_compile(descr, &filter, "arp", 1, mask) == -1){
+    fprintf(stderr, "ERROR: %s\n", pcap_geterr(descr) );
+    exit(1);
+ }
+
+ /* Load the filter program into the packet capture device. */ 
+ if (pcap_setfilter(descr,&filter) == -1){
+    fprintf(stderr, "ERROR: %s\n", pcap_geterr(descr) );
+    exit(1);
+ }
+
+ 
+ while(1){
+
+     int status = pcap_next_ex(descr,&pkthdr, &packet);
+     if( status == -1){
+        pcap_perror(descr,"ERROR: ");
+     }
+
+     if(status == 0){
+        printf("Pcap timeout");
+     }
+
+     recv_arp = (struct arp_hdr *)(packet+14);
+     
+
+
+      if(ntohs(recv_arp->opcode) == 1)
+        printf("received arp request\n");
+
+
+ }
 
 
 
 
 /*********Dummy send code for now, will be changed later**********/
-
+/*
   //Dummy destination, will be replaced later with whoever is sending the ARP request 
   uint8_t *dest_mac = malloc(6);
   memset(dest_mac,0xFF,6);
@@ -116,10 +169,13 @@ int main() {
     perror ("sendto() failed");
     exit (EXIT_FAILURE);
   }
+  */
 /**********End of dummy code*********/
 
   return(0);
 }
+
+
 
 struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac, uint8_t *dest_ip)
 {
