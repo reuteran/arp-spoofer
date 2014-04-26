@@ -147,11 +147,11 @@ int main(int argc, char *argv[]) {
 
     signal(SIGINT, &sig_handler);
     
-      /* Open the socket to send */
-      if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
-        printf("%s\n",strerror(errno));
-        return(1);
-      }
+    /* Open the socket to send */
+    if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
+      printf("%s\n",strerror(errno));
+      return(1);
+    }
 
     /* Main loop */
     while(g_running){
