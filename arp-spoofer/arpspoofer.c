@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
 
 
 
-    strcpy (interface, argv[1]);      /*Copy user input*/
+    strcpy(interface, argv[1]);      /*Copy user input*/
     strcpy(spoofed_IP,argv[2]);
 
 
@@ -146,6 +146,12 @@ int main(int argc, char *argv[]) {
 
 
     signal(SIGINT, &sig_handler);
+    
+      /* Open the socket to send */
+      if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
+        printf("%s\n",strerror(errno));
+        return(1);
+      }
 
     /* Main loop */
     while(g_running){
@@ -182,11 +188,6 @@ int main(int argc, char *argv[]) {
       memcpy(msg + sizeof(struct eth_hdr), arp_rsp, sizeof(struct arp_hdr));
 
 
-      /* Open the socket to send */
-      if ((sd = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_ALL))) < 0) {
-        printf("%s\n",strerror(errno));
-        return(1);
-      }
 
       /* Send */
       if ((bytes = sendto (sd, msg, ETH_HDRLEN + ARP_HDRLEN, 0, (struct sockaddr *) &device, sizeof (device))) <= 0) {
